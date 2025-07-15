@@ -46,12 +46,26 @@ func UploadPhoto(c *gin.Context) {
 		return
 	}
 
+	// User
+	userIDStr, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	userID, err := primitive.ObjectIDFromHex(userIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user id"})
+		return
+	}
+
 	// Create DB record
 	photo := models.Photo{
 		ID:       primitive.NewObjectID(),
 		Name:     name,
 		Path:     filepath,
 		UploadAt: time.Now().Unix(),
+		UserID:   userID,
 	}
 
 	collection := database.GetPhotoCollection()
@@ -89,7 +103,15 @@ func ListPhotos(c *gin.Context) {
 	findOptions.SetLimit(int64(limit))
 	findOptions.SetSort(bson.M{"upload_at": -1})
 
-	cursor, err := collection.Find(context.Background(), bson.M{}, findOptions)
+	// User ID from JWT
+	userIDStr, _ := c.Get("userID")
+	userID, _ := primitive.ObjectIDFromHex(userIDStr.(string))
+
+	filter := bson.M{
+		"user_id": userID,
+	}
+
+	cursor, err := collection.Find(context.Background(), filter, findOptions)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch photos"})
 		return
@@ -133,10 +155,15 @@ func SearchPhotos(c *gin.Context) {
 
 	collection := database.GetPhotoCollection()
 
+	// User ID from JWT
+	userIDStr, _ := c.Get("userID")
+	userID, _ := primitive.ObjectIDFromHex(userIDStr.(string))
+
 	filter := bson.M{
+		"user_id": userID,
 		"name": bson.M{
 			"$regex":   query,
-			"$options": "i", // case-insensitive partial match
+			"$options": "i",
 		},
 	}
 
