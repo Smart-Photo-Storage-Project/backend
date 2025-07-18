@@ -7,6 +7,7 @@ import (
 	"photo-storage-backend/database"
 	"photo-storage-backend/routes"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,6 +24,8 @@ func main() {
 
 	// Set up router
 	r := gin.Default()
+
+	r.Use(cors.Default()) // Equivalent to AllowAllOrigins = true, will be changed on production
 
 	// Static Files
 	r.Static("/uploads", "./uploads")
