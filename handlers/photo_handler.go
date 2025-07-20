@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,36 +18,26 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func UploadPhoto(c *gin.Context) {
-	// Parse uploaded file
-	file, err := c.FormFile("photo")
+func UploadPhotos(c *gin.Context) {
+	form, err := c.MultipartForm()
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "photo file is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to parse form data"})
 		return
 	}
 
-	name := c.PostForm("name")
-	if name == "" {
-		name = file.Filename
+	files := form.File["photos"]
+	if len(files) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no photos uploaded"})
+		return
 	}
 
-	// Create uploads directory if it doesn't exist
 	uploadDir := "uploads"
-	err = os.MkdirAll(uploadDir, os.ModePerm)
-	if err != nil {
+	if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create upload directory"})
 		return
 	}
 
-	// Save file to disk
-	filename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), file.Filename)
-	filepath := filepath.Join(uploadDir, filename)
-	if err := c.SaveUploadedFile(file, filepath); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save file"})
-		return
-	}
-
-	// User
+	// Get user ID from context
 	userIDStr, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
@@ -55,33 +46,64 @@ func UploadPhoto(c *gin.Context) {
 
 	userID, err := primitive.ObjectIDFromHex(userIDStr.(string))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user id"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user ID"})
 		return
 	}
 
-	// Create DB record
-	photo := models.Photo{
-		ID:       primitive.NewObjectID(),
-		Name:     name,
-		Path:     filepath,
-		UploadAt: time.Now().Unix(),
-		UserID:   userID,
+	collection := database.GetPhotoCollection()
+
+	var photoDocs []interface{}
+	var uploadedPhotos []models.Photo
+	var failedPhotos []string
+
+	for _, file := range files {
+		name := file.Filename
+		filename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), name)
+		filePath := filepath.Join(uploadDir, filename)
+
+		if err := c.SaveUploadedFile(file, filePath); err != nil {
+			// Track filename that failed
+			failedPhotos = append(failedPhotos, name)
+			continue
+		}
+
+		photo := models.Photo{
+			ID:       primitive.NewObjectID(),
+			Name:     name,
+			Path:     filePath,
+			UploadAt: time.Now().Unix(),
+			UserID:   userID,
+		}
+
+		photoDocs = append(photoDocs, photo)
+		uploadedPhotos = append(uploadedPhotos, photo)
 	}
 
-	collection := database.GetPhotoCollection()
-	_, err = collection.InsertOne(context.Background(), photo)
-	if err != nil {
+	if len(photoDocs) == 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "no valid files to upload"})
+		return
+	}
+
+	// Batch insert metadata
+	if _, err := collection.InsertMany(context.Background(), photoDocs); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save photo metadata"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "upload successful", "photo": photo})
+	// Success response
+	c.JSON(http.StatusOK, gin.H{
+		"message":        "batch upload completed",
+		"uploaded_count": len(uploadedPhotos),
+		"failed_count":   len(failedPhotos),
+		"uploaded":       uploadedPhotos,
+		"failed_files":   failedPhotos,
+	})
 }
 
 func ListPhotos(c *gin.Context) {
 	// Parse pagination params
 	pageStr := c.DefaultQuery("page", "1")
-	limitStr := c.DefaultQuery("limit", "20")
+	limitStr := c.DefaultQuery("limit", "21")
 
 	page, err := strconv.Atoi(pageStr)
 	if err != nil || page < 1 {
@@ -90,7 +112,7 @@ func ListPhotos(c *gin.Context) {
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil || limit < 1 {
-		limit = 20
+		limit = 21
 	}
 
 	skip := (page - 1) * limit
@@ -111,6 +133,12 @@ func ListPhotos(c *gin.Context) {
 		"user_id": userID,
 	}
 
+	totalCount, err := collection.CountDocuments(context.Background(), filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count documents"})
+		return
+	}
+
 	cursor, err := collection.Find(context.Background(), filter, findOptions)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch photos"})
@@ -124,10 +152,15 @@ func ListPhotos(c *gin.Context) {
 		return
 	}
 
+	// Calculate totalPages
+	totalPages := int(math.Ceil(float64(totalCount) / float64(limit)))
+
 	c.JSON(http.StatusOK, gin.H{
-		"page":   page,
-		"limit":  limit,
-		"photos": photos,
+		"page":       page,
+		"limit":      limit,
+		"photos":     photos,
+		"total":      totalCount,
+		"totalPages": totalPages,
 	})
 }
 
@@ -139,7 +172,7 @@ func SearchPhotos(c *gin.Context) {
 	}
 
 	pageStr := c.DefaultQuery("page", "1")
-	limitStr := c.DefaultQuery("limit", "20")
+	limitStr := c.DefaultQuery("limit", "21")
 
 	page, err := strconv.Atoi(pageStr)
 	if err != nil || page < 1 {
@@ -148,7 +181,7 @@ func SearchPhotos(c *gin.Context) {
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil || limit < 1 {
-		limit = 20
+		limit = 21
 	}
 
 	skip := (page - 1) * limit
@@ -165,6 +198,13 @@ func SearchPhotos(c *gin.Context) {
 			"$regex":   query,
 			"$options": "i",
 		},
+	}
+
+	// Count total matching docs first
+	totalCount, err := collection.CountDocuments(context.Background(), filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count documents"})
+		return
 	}
 
 	findOptions := options.Find().
@@ -185,10 +225,15 @@ func SearchPhotos(c *gin.Context) {
 		return
 	}
 
+	// Calculate totalPages
+	totalPages := int(math.Ceil(float64(totalCount) / float64(limit)))
+
 	c.JSON(http.StatusOK, gin.H{
-		"page":   page,
-		"limit":  limit,
-		"query":  query,
-		"photos": results,
+		"page":       page,
+		"limit":      limit,
+		"query":      query,
+		"photos":     results,
+		"total":      totalCount,
+		"totalPages": totalPages,
 	})
 }

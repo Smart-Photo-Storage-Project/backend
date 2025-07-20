@@ -18,7 +18,7 @@ func SetupRoutes(r *gin.Engine) {
 	apiAuth := api.Group("/")
 	apiAuth.Use(middleware.AuthMiddleware())
 	{
-		apiAuth.POST("/upload", handlers.UploadPhoto)
+		apiAuth.POST("/upload", handlers.UploadPhotos)
 		apiAuth.GET("/photos", handlers.ListPhotos)
 		apiAuth.GET("/search", handlers.SearchPhotos)
 	}
