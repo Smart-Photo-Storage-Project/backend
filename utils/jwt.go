@@ -15,8 +15,6 @@ func init() {
 	if secret == "" {
 		log.Fatal("JWT_SECRET is not set in environment")
 	}
-	log.Println("[JWT INIT] JWT_SECRET loaded successfully")
-	log.Printf("[JWT TOKEN] %s\n", secret)
 
 	jwtKey = []byte(secret)
 }
