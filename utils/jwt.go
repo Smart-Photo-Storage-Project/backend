@@ -1,14 +1,27 @@
 package utils
 
 import (
+	"log"
+	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var jwtKey = []byte("w9FxrN4s6nLJQ8sdRjFzGvMe3zXcYpK2dS3tUvWx0Pb1KrLsExHgJuZqNtBhMfK9")
+var jwtKey []byte
 
-// jwtKey := []byte(os.Getenv("JWT_SECRET"))
+func init() {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		log.Fatal("JWT_SECRET is not set in environment")
+	}
+	log.Println("[JWT INIT] JWT_SECRET loaded successfully")
+	log.Printf("[JWT TOKEN] %s\n", secret)
+
+	jwtKey = []byte(secret)
+}
+
+// jwtKey := []byte("my-32-character-ultra-secure-and-ultra-long-secret")
 
 func GenerateToken(userID string) (string, error) {
 	claims := jwt.MapClaims{
