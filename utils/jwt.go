@@ -19,7 +19,7 @@ func init() {
 	jwtKey = []byte(secret)
 }
 
-// jwtKey := []byte("my-32-character-ultra-secure-and-ultra-long-secret")
+// var jwtKey = []byte("my-32-character-ultra-secure-and-ultra-long-secret")
 
 func GenerateToken(userID string) (string, error) {
 	claims := jwt.MapClaims{

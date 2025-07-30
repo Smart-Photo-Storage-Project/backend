@@ -1,9 +1,14 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"math"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -90,6 +95,18 @@ func UploadPhotos(c *gin.Context) {
 		return
 	}
 
+	// Image embedding
+	inferenceURL := os.Getenv("INFERENCE_URL")
+	fmt.Println(inferenceURL)
+	if inferenceURL == "" {
+		inferenceURL = "http://localhost:8000/embed/images"
+	}
+	resp, err := SendImagesToInference(uploadedPhotos, inferenceURL)
+	if err != nil || resp.StatusCode >= 300 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to send images to inference"})
+		return // Blocking for now, will be refactored to asynchronous later
+	}
+
 	// Success response
 	c.JSON(http.StatusOK, gin.H{
 		"message":        "batch upload completed",
@@ -171,69 +188,101 @@ func SearchPhotos(c *gin.Context) {
 		return
 	}
 
-	pageStr := c.DefaultQuery("page", "1")
-	limitStr := c.DefaultQuery("limit", "21")
-
-	page, err := strconv.Atoi(pageStr)
-	if err != nil || page < 1 {
-		page = 1
-	}
-
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil || limit < 1 {
-		limit = 21
-	}
-
-	skip := (page - 1) * limit
-
-	collection := database.GetPhotoCollection()
-
-	// User ID from JWT
 	userIDStr, _ := c.Get("userID")
-	userID, _ := primitive.ObjectIDFromHex(userIDStr.(string))
+	userID := userIDStr.(string)
 
-	filter := bson.M{
+	// Prepare JSON body
+	reqBody := map[string]string{
+		"text":    query,
 		"user_id": userID,
-		"name": bson.M{
-			"$regex":   query,
-			"$options": "i",
-		},
 	}
 
-	// Count total matching docs first
-	totalCount, err := collection.CountDocuments(context.Background(), filter)
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count documents"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encode request"})
 		return
 	}
 
-	findOptions := options.Find().
-		SetSkip(int64(skip)).
-		SetLimit(int64(limit)).
-		SetSort(bson.M{"upload_at": -1})
+	// Send request to inference service
 
-	cursor, err := collection.Find(context.Background(), filter, findOptions)
+	inferenceSearchURL := os.Getenv("INFERENCE_SEARCH_URL")
+	if inferenceSearchURL == "" {
+		inferenceSearchURL = "http://localhost:8000/embed/text"
+	}
+	fmt.Println(inferenceSearchURL)
+	resp, err := http.Post(inferenceSearchURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to search"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "inference service error"})
 		return
 	}
-	defer cursor.Close(context.Background())
+	defer resp.Body.Close()
 
-	var results []models.Photo
-	if err := cursor.All(context.Background(), &results); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode results"})
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "inference failed", "details": string(body)})
 		return
 	}
 
-	// Calculate totalPages
-	totalPages := int(math.Ceil(float64(totalCount) / float64(limit)))
+	// Parse response from inference
+	var inferenceResponse struct {
+		Results []models.InferenceSearchResult `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&inferenceResponse); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse inference response"})
+		return
+	}
 
+	// Wrap to match expected frontend format
 	c.JSON(http.StatusOK, gin.H{
-		"page":       page,
-		"limit":      limit,
+		"page":       1,
+		"limit":      len(inferenceResponse.Results),
 		"query":      query,
-		"photos":     results,
-		"total":      totalCount,
-		"totalPages": totalPages,
+		"photos":     inferenceResponse.Results,
+		"total":      len(inferenceResponse.Results),
+		"totalPages": 1,
 	})
+}
+
+func SendImagesToInference(images []models.Photo, inferenceURL string) (*http.Response, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	if len(images) == 0 {
+		return nil, errors.New("no images to send")
+	}
+
+	_ = writer.WriteField("user_id", images[0].UserID.Hex())
+	_ = writer.WriteField("upload_at", strconv.FormatInt(images[0].UploadAt, 10))
+
+	for _, photo := range images {
+		file, err := os.Open(photo.Path)
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+
+		// Add file
+		part, err := writer.CreateFormFile("files", filepath.Base(photo.Path))
+		if err != nil {
+			return nil, err
+		}
+		if _, err := io.Copy(part, file); err != nil {
+			return nil, err
+		}
+
+		// Add per-image metadata
+		_ = writer.WriteField("names", photo.Name)
+		_ = writer.WriteField("paths", photo.Path)
+	}
+
+	_ = writer.Close()
+
+	req, err := http.NewRequest("POST", inferenceURL, &body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	client := &http.Client{}
+	return client.Do(req)
 }
