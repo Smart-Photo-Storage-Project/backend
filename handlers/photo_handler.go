@@ -7,12 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
 	"photo-storage-backend/database"
+	"photo-storage-backend/messaging"
 	"photo-storage-backend/models"
 	"strconv"
 	"time"
@@ -95,17 +97,30 @@ func UploadPhotos(c *gin.Context) {
 		return
 	}
 
+	// Send data to inference service asynchronously
+	go func(photos []models.Photo) {
+		rmqURL := os.Getenv("RABBITMQ_URL")
+		if rmqURL == "" {
+			rmqURL = "amqp://guest:guest@localhost:5672/"
+		}
+		if err := messaging.PublishEmbeddingJob(rmqURL, photos); err != nil {
+			log.Printf("Failed to publish embedding job: %v", err)
+		} else {
+			log.Printf("Embedding job queued for %d photos (user: %s)", len(photos), photos[0].UserID.Hex())
+		}
+	}(uploadedPhotos)
+
 	// Image embedding
-	inferenceURL := os.Getenv("INFERENCE_URL")
-	fmt.Println(inferenceURL)
-	if inferenceURL == "" {
-		inferenceURL = "http://localhost:8000/embed/images"
-	}
-	resp, err := SendImagesToInference(uploadedPhotos, inferenceURL)
-	if err != nil || resp.StatusCode >= 300 {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to send images to inference"})
-		return // Blocking for now, will be refactored to asynchronous later
-	}
+	// inferenceURL := os.Getenv("INFERENCE_URL")
+	// fmt.Println(inferenceURL)
+	// if inferenceURL == "" {
+	// 	inferenceURL = "http://localhost:8000/embed/images"
+	// }
+	// resp, err := SendImagesToInference(uploadedPhotos, inferenceURL)
+	// if err != nil || resp.StatusCode >= 300 {
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to send images to inference"})
+	// 	return // Blocking for now, will be refactored to asynchronous later
+	// }
 
 	// Success response
 	c.JSON(http.StatusOK, gin.H{

@@ -1,25 +1,23 @@
 package utils
 
 import (
-	"log"
-	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var jwtKey []byte
+// var jwtKey []byte
 
-func init() {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		log.Fatal("JWT_SECRET is not set in environment")
-	}
+// func init() {
+// 	secret := os.Getenv("JWT_SECRET")
+// 	if secret == "" {
+// 		log.Fatal("JWT_SECRET is not set in environment")
+// 	}
 
-	jwtKey = []byte(secret)
-}
+// 	jwtKey = []byte(secret)
+// }
 
-// var jwtKey = []byte("my-32-character-ultra-secure-and-ultra-long-secret")
+var jwtKey = []byte("my-32-character-ultra-secure-and-ultra-long-secret")
 
 func GenerateToken(userID string) (string, error) {
 	claims := jwt.MapClaims{
