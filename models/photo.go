@@ -11,4 +11,5 @@ type Photo struct {
 	UploadAt int64              `bson:"upload_at" json:"upload_at"`
 	UserID   primitive.ObjectID `bson:"user_id" json:"-"`
 	Embedded bool               `bson:"embedded" json:"embedded"`
+	BatchID  primitive.ObjectID `bson:"batch_id" json:"batch_id"`
 }

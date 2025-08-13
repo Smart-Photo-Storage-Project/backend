@@ -55,6 +55,9 @@ func UploadPhotos(c *gin.Context) {
 		return
 	}
 
+	// Batch ID for batch upload
+	batchID := primitive.NewObjectID()
+
 	collection := database.GetPhotoCollection()
 
 	var photoDocs []interface{}
@@ -79,6 +82,7 @@ func UploadPhotos(c *gin.Context) {
 			UploadAt: time.Now().Unix(),
 			UserID:   userID,
 			Embedded: false,
+			BatchID:  batchID,
 		}
 
 		photoDocs = append(photoDocs, photo)
@@ -94,6 +98,25 @@ func UploadPhotos(c *gin.Context) {
 	if _, err := collection.InsertMany(context.Background(), photoDocs); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save photo metadata"})
 		return
+	}
+
+	// Create Notification Object
+	notification := models.Notification{
+		ID:        primitive.NewObjectID(),
+		BatchID:   batchID,
+		UserID:    userID,
+		CreatedAt: time.Now().Unix(),
+		Status:    "pending",
+		Total:     len(uploadedPhotos),
+		Completed: 0,
+		Failed:    0,
+		Message:   "Embedding started...",
+	}
+
+	notifCollection := database.GetNotificationCollection()
+	_, err = notifCollection.InsertOne(context.Background(), notification)
+	if err != nil {
+		log.Printf("Failed to insert notification: %v", err)
 	}
 
 	// Send data to inference service asynchronously
@@ -128,6 +151,7 @@ func UploadPhotos(c *gin.Context) {
 		"failed_count":   len(failedPhotos),
 		"uploaded":       uploadedPhotos,
 		"failed_files":   failedPhotos,
+		"batch_id":       batchID,
 	})
 }
 

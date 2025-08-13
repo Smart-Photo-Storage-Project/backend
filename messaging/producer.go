@@ -15,6 +15,7 @@ type EmbedJob struct {
 	UserID   string      `json:"user_id"`
 	UploadAt int64       `json:"upload_at"`
 	Photos   []PhotoMeta `json:"photos"`
+	BatchID  string      `json:"batch_id"`
 }
 
 type PhotoMeta struct {
@@ -51,6 +52,7 @@ func PublishEmbeddingJob(rmqURL string, photos []models.Photo) error {
 		UserID:   photos[0].UserID.Hex(),
 		UploadAt: photos[0].UploadAt,
 		Photos:   make([]PhotoMeta, len(photos)),
+		BatchID:  photos[0].BatchID.Hex(),
 	}
 	for i, p := range photos {
 		job.Photos[i] = PhotoMeta{

@@ -14,7 +14,7 @@ import (
 
 type EmbeddingResult struct {
 	Name     string `json:"name"`
-	Path     string `json:"path"`
+	BatchID  string `json:"batch_id"`
 	UserID   string `json:"user_id"`
 	UploadAt int64  `json:"upload_at"`
 }
@@ -68,12 +68,17 @@ func StartEmbeddingResultConsumer(rmqURL string) error {
 
 			// Update MongoDB
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
 
 			err := repository.MarkAsEmbedded(ctx, result.UserID, result.Name)
 			if err != nil {
 				log.Printf("Failed to update photo status: %v", err)
 			}
+
+			if err := repository.UpdateNotificationProgress(ctx, result.UserID, result.BatchID); err != nil {
+				log.Printf("Failed to update notification progress: %v", err)
+			}
+
+			cancel()
 		}
 	}()
 

@@ -10,6 +10,7 @@ import (
 
 var photoCollection *mongo.Collection
 var userCollection *mongo.Collection
+var notificationCollection *mongo.Collection
 
 func InitMongo(uri, dbName string) {
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(uri))
@@ -18,6 +19,7 @@ func InitMongo(uri, dbName string) {
 	}
 	photoCollection = client.Database(dbName).Collection("photos")
 	userCollection = client.Database(dbName).Collection("users")
+	notificationCollection = client.Database(dbName).Collection("notifications")
 }
 
 func GetPhotoCollection() *mongo.Collection {
@@ -26,4 +28,8 @@ func GetPhotoCollection() *mongo.Collection {
 
 func GetUserCollection() *mongo.Collection {
 	return userCollection
+}
+
+func GetNotificationCollection() *mongo.Collection {
+	return notificationCollection
 }

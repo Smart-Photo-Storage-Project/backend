@@ -21,5 +21,6 @@ func SetupRoutes(r *gin.Engine) {
 		apiAuth.POST("/upload", handlers.UploadPhotos)
 		apiAuth.GET("/photos", handlers.ListPhotos)
 		apiAuth.GET("/search", handlers.SearchPhotos)
+		apiAuth.GET("/notification", handlers.GetNotifications)
 	}
 }
