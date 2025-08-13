@@ -30,6 +30,7 @@ func UpdateNotificationProgress(ctx context.Context, userIDStr string, batchIDSt
 
 	update := bson.M{
 		"$inc": bson.M{"completed": 1},
+		"$set": bson.M{"read": false},
 	}
 
 	res := notifCollection.FindOneAndUpdate(ctx, filter, update, options.FindOneAndUpdate().SetReturnDocument(options.After))

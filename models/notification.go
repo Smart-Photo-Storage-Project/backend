@@ -14,4 +14,5 @@ type Notification struct {
 	Completed int                `bson:"completed" json:"completed"`
 	Failed    int                `bson:"failed" json:"failed"`
 	Message   string             `bson:"message,omitempty" json:"message,omitempty"`
+	Read      bool               `bson: "read" json:"read"`
 }

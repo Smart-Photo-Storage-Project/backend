@@ -111,6 +111,7 @@ func UploadPhotos(c *gin.Context) {
 		Completed: 0,
 		Failed:    0,
 		Message:   "Embedding started...",
+		Read:      false,
 	}
 
 	notifCollection := database.GetNotificationCollection()
