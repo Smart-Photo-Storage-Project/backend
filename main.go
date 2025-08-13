@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"photo-storage-backend/database"
+	"photo-storage-backend/messaging"
 	"photo-storage-backend/routes"
 
 	"github.com/gin-contrib/cors"
@@ -21,6 +22,13 @@ func main() {
 	// Connect to MongoDB
 	database.InitMongo(mongoURI, dbName)
 	log.Println("Connected to MongoDB")
+
+	// Rabbitmq consumer for notification
+	rmqURL := os.Getenv("RABBITMQ_URL")
+	if rmqURL == "" {
+		rmqURL = "amqp://guest:guest@localhost:5672/"
+	}
+	go messaging.StartEmbeddingResultConsumer(rmqURL)
 
 	// Set up router
 	r := gin.Default()

@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"math"
-	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -80,6 +78,7 @@ func UploadPhotos(c *gin.Context) {
 			Path:     filePath,
 			UploadAt: time.Now().Unix(),
 			UserID:   userID,
+			Embedded: false,
 		}
 
 		photoDocs = append(photoDocs, photo)
@@ -258,46 +257,49 @@ func SearchPhotos(c *gin.Context) {
 	})
 }
 
-func SendImagesToInference(images []models.Photo, inferenceURL string) (*http.Response, error) {
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
+/*
+DEPRECATED (for testing purpose only)
+*/
+// func SendImagesToInference(images []models.Photo, inferenceURL string) (*http.Response, error) {
+// 	var body bytes.Buffer
+// 	writer := multipart.NewWriter(&body)
 
-	if len(images) == 0 {
-		return nil, errors.New("no images to send")
-	}
+// 	if len(images) == 0 {
+// 		return nil, errors.New("no images to send")
+// 	}
 
-	_ = writer.WriteField("user_id", images[0].UserID.Hex())
-	_ = writer.WriteField("upload_at", strconv.FormatInt(images[0].UploadAt, 10))
+// 	_ = writer.WriteField("user_id", images[0].UserID.Hex())
+// 	_ = writer.WriteField("upload_at", strconv.FormatInt(images[0].UploadAt, 10))
 
-	for _, photo := range images {
-		file, err := os.Open(photo.Path)
-		if err != nil {
-			return nil, err
-		}
-		defer file.Close()
+// 	for _, photo := range images {
+// 		file, err := os.Open(photo.Path)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		defer file.Close()
 
-		// Add file
-		part, err := writer.CreateFormFile("files", filepath.Base(photo.Path))
-		if err != nil {
-			return nil, err
-		}
-		if _, err := io.Copy(part, file); err != nil {
-			return nil, err
-		}
+// 		// Add file
+// 		part, err := writer.CreateFormFile("files", filepath.Base(photo.Path))
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		if _, err := io.Copy(part, file); err != nil {
+// 			return nil, err
+// 		}
 
-		// Add per-image metadata
-		_ = writer.WriteField("names", photo.Name)
-		_ = writer.WriteField("paths", photo.Path)
-	}
+// 		// Add per-image metadata
+// 		_ = writer.WriteField("names", photo.Name)
+// 		_ = writer.WriteField("paths", photo.Path)
+// 	}
 
-	_ = writer.Close()
+// 	_ = writer.Close()
 
-	req, err := http.NewRequest("POST", inferenceURL, &body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+// 	req, err := http.NewRequest("POST", inferenceURL, &body)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	client := &http.Client{}
-	return client.Do(req)
-}
+// 	client := &http.Client{}
+// 	return client.Do(req)
+// }
